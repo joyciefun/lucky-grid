@@ -115,9 +115,13 @@
       });
 
       // 保險：若字串不小心對不上，直接退回停在 0
-      const stopRingIndex = candidates.length
-        ? candidates[Math.floor(Math.random() * candidates.length)]
-        : 0;
+let stopRingIndex = candidates.length
+  ? candidates[Math.floor(Math.random() * candidates.length)]
+  : 0;
+
+// 你目前的停格視覺會順時針偏一格，所以把目標往回退一格抵消
+stopRingIndex = (stopRingIndex + 7) % 8;
+
 
       // 3) 動畫：修正步進方式 => 先 step++ 再亮格（避免看起來偏一格）
       let ringStep = -1;        // 先從 -1 開始
@@ -144,3 +148,4 @@
   </script>
 </body>
 </html>
+
