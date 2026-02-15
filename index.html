@@ -93,16 +93,13 @@ btn.onclick=()=>{
       step++;
       setTimeout(tick,delay);
     }else{
-      running=false;
-      btn.disabled=false;
-      alert("抽中："+ringPrizes[targetRingIdx]);
-    }
-  };
+  running=false;
+  btn.disabled=false;
 
-  tick();
-};
-
-</script>
-</body>
-</html>
-
+  // 讓最後一格先完成重繪（避免 alert 阻塞造成看起來「差一格」）
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      alert("抽中：" + ringPrizes[targetRingIdx]);
+    }, 0);
+  });
+}
