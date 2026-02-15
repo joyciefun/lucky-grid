@@ -5,101 +5,190 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>九宮格抽獎</title>
 <style>
-body{font-family:sans-serif;margin:24px}
-.grid{display:grid;grid-template-columns:repeat(3,110px);gap:10px}
-.cell{
-  height:110px;display:flex;align-items:center;justify-content:center;
-  border:1px solid #ccc;border-radius:12px;text-align:center
-}
-.active{outline:3px solid #000}
-button{height:110px;width:110px;border-radius:12px;background:#000;color:#fff}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans TC",sans-serif;margin:24px}
+  h3{margin:0 0 12px}
+  .grid{display:grid;grid-template-columns:repeat(3,110px);gap:10px}
+  .cell{
+    height:110px; padding:10px;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid #ccc;border-radius:12px;
+    text-align:center;line-height:1.2;
+    user-select:none;background:#fff;
+  }
+  .active{outline:4px solid #111}
+  button{
+    height:110px;width:110px;border-radius:12px;
+    border:1px solid #111;background:#111;color:#fff;
+    font-size:16px;cursor:pointer;
+  }
+  button:disabled{opacity:.6;cursor:not-allowed}
+  .muted{color:#666;font-size:13px;margin-top:12px}
+
+  /* 非阻塞彈窗（取代 alert） */
+  .overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.35);
+    display:none; align-items:center; justify-content:center;
+    padding:18px;
+  }
+  .modal{
+    width:min(520px, 92vw);
+    background:#fff; border-radius:14px;
+    border:1px solid #e5e5e5;
+    padding:16px 16px 14px;
+  }
+  .modal h4{margin:0 0 8px; font-size:16px}
+  .modal .result{font-size:20px; font-weight:700; margin:10px 0 14px}
+  .modal .btnrow{display:flex; justify-content:flex-end; gap:10px}
+  .btn2{
+    padding:10px 14px; border-radius:10px;
+    border:1px solid #111; background:#111; color:#fff;
+    cursor:pointer;
+  }
 </style>
 </head>
 <body>
 
 <h3>九宮格抽獎</h3>
 <div class="grid" id="grid"></div>
+<div class="muted">每次點「開始」都會抽出一個獎（可重複）。不同手機各自獨立抽。</div>
+
+<!-- 非阻塞結果彈窗 -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h4 id="modalTitle">抽獎結果</h4>
+    <div class="result" id="modalResult">—</div>
+    <div class="btnrow">
+      <button class="btn2" id="modalOk">確定</button>
+    </div>
+  </div>
+</div>
 
 <script>
+  // DOM 格子位置索引（0..8）：
+  // 0 1 2
+  // 3 4 5
+  // 6 7 8
+  //
+  // 順時針跑燈的 8 格位置（不含中間 4）
+  const ringPositions = [0,1,2,5,8,7,6,3];
 
-// 順時針 8 格位置
-const ringPositions = [0,1,2,5,8,7,6,3];
+  // 8 格顯示內容（依 ringPositions 順序）
+  // 依你要求：把「刮刮樂300元一張」與「特別獎」對調
+  // 原本 bottom-right(索引4) 是特別獎，bottom-middle(索引5) 是 300
+  // 現在改成：bottom-right(索引4) = 300，bottom-middle(索引5) = 特別獎
+  const ringPrizes = [
+    "特別獎",              // 0: top-left
+    "現金200元",           // 1: top-mid
+    "現金600元",           // 2: top-right
+    "刮刮樂200元一張",      // 3: mid-right
+    "刮刮樂300元一張",      // 4: bottom-right  ← 與特別獎對調
+    "特別獎",              // 5: bottom-mid    ← 與300對調
+    "大樂透隨機快選4張",    // 6: bottom-left
+    "刮刮樂500元一張"       // 7: mid-left
+  ];
 
-// 每個 ringIndex 對應一個獎（這裡直接固定好）
-const ringPrizes = [
-  "特別獎",
-  "現金200元",
-  "現金600元",
-  "刮刮樂200元一張",
-  "特別獎",
-  "刮刮樂300元一張",
-  "大樂透隨機快選4張",
-  "刮刮樂500元一張"
-];
+  // 權重（對應 ringPrizes 的 8 格；數字越大越常抽到）
+  // 我先給一組「合理」的：200最常、特別獎較稀有、500也偏少
+  const weights = [
+    3,   // 特別獎
+    35,  // 現金200
+    8,   // 現金600
+    25,  // 刮刮樂200
+    16,  // 刮刮樂300
+    3,   // 特別獎
+    8,   // 大樂透×4
+    5    // 刮刮樂500
+  ];
 
-// 權重（跟 ringIndex 一一對應）
-const weights = [3,35,8,25,5,16,8,3];
+  const grid = document.getElementById("grid");
+  const cells = [];
 
-const grid = document.getElementById("grid");
-const cells = [];
-
-for(let i=0;i<9;i++){
-  const div = document.createElement("div");
-  if(i===4){
-    div.innerHTML = `<button id="btn">開始</button>`;
-  }else{
-    div.className="cell";
-    const ringIdx = ringPositions.indexOf(i);
-    div.textContent = ringPrizes[ringIdx];
-  }
-  grid.appendChild(div);
-  cells.push(div);
-}
-
-function weightedPick(){
-  const sum = weights.reduce((a,b)=>a+b,0);
-  let r = Math.random()*sum;
-  for(let i=0;i<weights.length;i++){
-    r -= weights[i];
-    if(r<0) return i;   // 回傳 ringIndex
-  }
-  return weights.length-1;
-}
-
-function highlight(ringIdx){
-  cells.forEach(c=>c.classList.remove("active"));
-  const pos = ringPositions[ringIdx];
-  cells[pos].classList.add("active");
-}
-
-let running=false;
-const btn=document.getElementById("btn");
-
-btn.onclick=()=>{
-  if(running) return;
-  running=true;
-  btn.disabled=true;
-
-  const targetRingIdx = weightedPick(); // 直接抽 ringIndex
-
-  let step=0;
-  let delay=80;
-  const totalSteps = 8*4 + targetRingIdx;
-
-  const tick=()=>{
-    highlight(step%8);
-    if(step<totalSteps){
-      if(step>totalSteps-12) delay+=25;
-      step++;
-      setTimeout(tick,delay);
+  // 建立九宮格（8格+中間按鈕）
+  for(let i=0;i<9;i++){
+    const div = document.createElement("div");
+    if(i===4){
+      div.innerHTML = `<button id="btn">開始</button>`;
     }else{
-  running=false;
-  btn.disabled=false;
+      div.className = "cell";
+      const ringIdx = ringPositions.indexOf(i); // 0..7
+      div.textContent = ringPrizes[ringIdx];
+    }
+    grid.appendChild(div);
+    cells.push(div);
+  }
 
-  // 讓最後一格先完成重繪（避免 alert 阻塞造成看起來「差一格」）
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      alert("抽中：" + ringPrizes[targetRingIdx]);
-    }, 0);
+  const btn = document.getElementById("btn");
+  const overlay = document.getElementById("overlay");
+  const modalResult = document.getElementById("modalResult");
+  const modalOk = document.getElementById("modalOk");
+
+  function showModal(text){
+    modalResult.textContent = text;
+    overlay.style.display = "flex";
+  }
+  function hideModal(){
+    overlay.style.display = "none";
+  }
+  modalOk.onclick = hideModal;
+  overlay.addEventListener("click", (e) => {
+    if(e.target === overlay) hideModal();
   });
-}
+
+  function highlight(ringIdx){
+    cells.forEach(c=>c.classList.remove("active"));
+    const pos = ringPositions[ringIdx];
+    cells[pos].classList.add("active");
+  }
+
+  function weightedPickIndex(){
+    const sum = weights.reduce((a,b)=>a+b,0);
+    let r = Math.random() * sum;
+    for(let i=0;i<weights.length;i++){
+      r -= weights[i];
+      if(r < 0) return i; // 回傳 ringIdx
+    }
+    return weights.length - 1;
+  }
+
+  let running = false;
+
+  btn.onclick = () => {
+    if(running) return;
+    running = true;
+    btn.disabled = true;
+
+    const targetRingIdx = weightedPickIndex();
+
+    let step = 0;
+    let delay = 80;
+    const totalSteps = 8*4 + targetRingIdx;
+
+    const tick = () => {
+      // 先亮目前步數對應的格
+      highlight(step % 8);
+
+      if(step < totalSteps){
+        if(step > totalSteps - 12) delay += 25; // 收尾減速
+        step++;
+        setTimeout(tick, delay);
+      }else{
+        // 雙保險：結束瞬間再強制 highlight 目標格，確保畫面一定停在目標
+        highlight(targetRingIdx);
+
+        // 用非阻塞彈窗顯示結果（不會卡住重繪）
+        // 用 requestAnimationFrame 讓最後一格先確實 render
+        requestAnimationFrame(() => {
+          showModal(`抽中：${ringPrizes[targetRingIdx]}`);
+          running = false;
+          btn.disabled = false;
+        });
+      }
+    };
+
+    tick();
+  };
+</script>
+
+</body>
+</html>
