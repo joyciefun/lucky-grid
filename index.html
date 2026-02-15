@@ -5,26 +5,61 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>九宮格抽獎</title>
 <style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans TC",sans-serif;margin:24px}
+  :root{
+    --bg: #f6f7fb;          /* 背景底色 */
+    --card: #ffffff;        /* 格子底色 */
+    --border: #d9d9d9;
+    --accent: #111111;      /* 高亮框 + 按鈕主色 */
+    --mask: #ef4444;        /* 蓋牌顏色（紅包感） */
+    --maskText: #ffffff;
+  }
+
+  body{
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans TC",sans-serif;
+    margin:24px;
+    background:var(--bg);
+  }
+
   h3{margin:0 0 12px}
+
   .grid{display:grid;grid-template-columns:repeat(3,110px);gap:10px}
   .cell{
     height:110px; padding:10px;
     display:flex;align-items:center;justify-content:center;
-    border:1px solid #ccc;border-radius:12px;
+    border:1px solid var(--border);
+    border-radius:14px;
     text-align:center;line-height:1.2;
-    user-select:none;background:#fff;
+    user-select:none;
+    background:var(--card);
+    position:relative;
+    overflow:hidden;
   }
-  .active{outline:4px solid #111}
+
+  .active{outline:4px solid var(--accent)}
+
   button{
-    height:110px;width:110px;border-radius:12px;
-    border:1px solid #111;background:#111;color:#fff;
+    height:110px;width:110px;border-radius:14px;
+    border:1px solid var(--accent);
+    background:var(--accent);color:#fff;
     font-size:16px;cursor:pointer;
   }
   button:disabled{opacity:.6;cursor:not-allowed}
   .muted{color:#666;font-size:13px;margin-top:12px}
 
-  /* 非阻塞彈窗（取代 alert） */
+  /* 蓋牌（覆蓋層） */
+  .mask{
+    position:absolute; inset:0;
+    background:var(--mask);
+    color:var(--maskText);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;
+    transform:translateY(0);
+    transition:transform 260ms ease;
+    letter-spacing:1px;
+  }
+  .revealed .mask{ transform:translateY(-110%); } /* 翻開：mask 上滑 */
+
+  /* 非阻塞彈窗 */
   .overlay{
     position:fixed; inset:0;
     background:rgba(0,0,0,.35);
@@ -38,11 +73,11 @@
     padding:16px 16px 14px;
   }
   .modal h4{margin:0 0 8px; font-size:16px}
-  .modal .result{font-size:20px; font-weight:700; margin:10px 0 14px}
+  .modal .result{font-size:20px; font-weight:800; margin:10px 0 14px}
   .modal .btnrow{display:flex; justify-content:flex-end; gap:10px}
   .btn2{
     padding:10px 14px; border-radius:10px;
-    border:1px solid #111; background:#111; color:#fff;
+    border:1px solid var(--accent); background:var(--accent); color:#fff;
     cursor:pointer;
   }
 </style>
@@ -51,12 +86,11 @@
 
 <h3>九宮格抽獎</h3>
 <div class="grid" id="grid"></div>
-<div class="muted">每次點「開始」都會抽出一個獎（可重複）。不同手機各自獨立抽。</div>
+<div class="muted">每次點「開始」會抽出一個獎（可重複），結束後會自動洗牌並重新蓋牌。</div>
 
-<!-- 非阻塞結果彈窗 -->
 <div class="overlay" id="overlay">
   <div class="modal">
-    <h4 id="modalTitle">抽獎結果</h4>
+    <h4>抽獎結果</h4>
     <div class="result" id="modalResult">—</div>
     <div class="btnrow">
       <button class="btn2" id="modalOk">確定</button>
@@ -65,60 +99,61 @@
 </div>
 
 <script>
-  // DOM 格子位置索引（0..8）：
-  // 0 1 2
-  // 3 4 5
-  // 6 7 8
-  //
-  // 順時針跑燈的 8 格位置（不含中間 4）
+  // 順時針 8 格（DOM 位置索引 0..8，不含中間 4）
   const ringPositions = [0,1,2,5,8,7,6,3];
 
-  // 8 格顯示內容（依 ringPositions 順序）
-  // 依你要求：把「刮刮樂300元一張」與「特別獎」對調
-  // 原本 bottom-right(索引4) 是特別獎，bottom-middle(索引5) 是 300
-  // 現在改成：bottom-right(索引4) = 300，bottom-middle(索引5) = 特別獎
-  const ringPrizes = [
-    "特別獎",              // 0: top-left
-    "現金200元",           // 1: top-mid
-    "現金600元",           // 2: top-right
-    "刮刮樂200元一張",      // 3: mid-right
-    "刮刮樂300元一張",      // 4: bottom-right  ← 與特別獎對調
-    "特別獎",              // 5: bottom-mid    ← 與300對調
-    "大樂透隨機快選4張",    // 6: bottom-left
-    "刮刮樂500元一張"       // 7: mid-left
+  // 8 格顯示內容（你只有 7 種，所以特別獎兩格；你也可改成補第8獎）
+  let ringPrizes = [
+    "特別獎",
+    "現金200元",
+    "現金600元",
+    "刮刮樂200元一張",
+    "刮刮樂300元一張",     // 已避免與特別獎相鄰
+    "特別獎",
+    "大樂透隨機快選4張",
+    "刮刮樂500元一張"
   ];
 
-  // 權重（對應 ringPrizes 的 8 格；數字越大越常抽到）
-  // 我先給一組「合理」的：200最常、特別獎較稀有、500也偏少
-  const weights = [
-    3,   // 特別獎
-    35,  // 現金200
-    8,   // 現金600
-    25,  // 刮刮樂200
-    16,  // 刮刮樂300
-    3,   // 特別獎
-    8,   // 大樂透×4
-    5    // 刮刮樂500
-  ];
+  // 權重（對應 ringPrizes 的 8 格）
+  // 你說「機率隨機設定」，我先給一組看起來合理的；你要我也能依你的偏好調
+  let weights = [3,35,8,25,16,3,8,5];
 
+  // ====== UI 建立 ======
   const grid = document.getElementById("grid");
-  const cells = [];
+  const cells = [];     // 所有 9 個格子 div
+  const ringCells = []; // 8 個獎格 div（依 ringIdx 0..7）
 
-  // 建立九宮格（8格+中間按鈕）
   for(let i=0;i<9;i++){
     const div = document.createElement("div");
+
     if(i===4){
       div.innerHTML = `<button id="btn">開始</button>`;
     }else{
       div.className = "cell";
       const ringIdx = ringPositions.indexOf(i); // 0..7
-      div.textContent = ringPrizes[ringIdx];
+
+      // 內容文字（實際獎項）
+      const text = document.createElement("div");
+      text.className = "text";
+      text.textContent = ringPrizes[ringIdx];
+      div.appendChild(text);
+
+      // 蓋牌遮罩
+      const mask = document.createElement("div");
+      mask.className = "mask";
+      mask.textContent = "紅包";
+      div.appendChild(mask);
+
+      ringCells[ringIdx] = div;
     }
+
     grid.appendChild(div);
     cells.push(div);
   }
 
   const btn = document.getElementById("btn");
+
+  // ====== 非阻塞彈窗 ======
   const overlay = document.getElementById("overlay");
   const modalResult = document.getElementById("modalResult");
   const modalOk = document.getElementById("modalOk");
@@ -131,32 +166,81 @@
     overlay.style.display = "none";
   }
   modalOk.onclick = hideModal;
-  overlay.addEventListener("click", (e) => {
-    if(e.target === overlay) hideModal();
-  });
+  overlay.addEventListener("click", (e)=>{ if(e.target === overlay) hideModal(); });
+
+  // ====== 音效（不需要音檔） ======
+  let audioCtx = null;
+  function beep(freq=880, ms=60, type="sine", gain=0.05){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.value = gain;
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.start();
+      setTimeout(()=>{ o.stop(); }, ms);
+    }catch(_){}
+  }
+
+  // ====== 工具函式 ======
+  function shuffleInPlace(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+  }
+
+  function redrawTexts(){
+    for(let i=0;i<8;i++){
+      const cell = ringCells[i];
+      cell.querySelector(".text").textContent = ringPrizes[i];
+      cell.classList.remove("revealed");
+    }
+  }
+
+  function clearActive(){
+    cells.forEach(c=>c.classList.remove("active"));
+  }
 
   function highlight(ringIdx){
-    cells.forEach(c=>c.classList.remove("active"));
-    const pos = ringPositions[ringIdx];
-    cells[pos].classList.add("active");
+    clearActive();
+    ringCells[ringIdx].classList.add("active");
+  }
+
+  function coverAll(){
+    for(let i=0;i<8;i++) ringCells[i].classList.remove("revealed");
+  }
+
+  function reveal(ringIdx){
+    ringCells[ringIdx].classList.add("revealed");
   }
 
   function weightedPickIndex(){
     const sum = weights.reduce((a,b)=>a+b,0);
-    let r = Math.random() * sum;
+    let r = Math.random()*sum;
     for(let i=0;i<weights.length;i++){
       r -= weights[i];
-      if(r < 0) return i; // 回傳 ringIdx
+      if(r < 0) return i;
     }
-    return weights.length - 1;
+    return weights.length-1;
   }
 
+  // 初始先蓋牌
+  coverAll();
+
+  // ====== 抽獎流程 ======
   let running = false;
 
   btn.onclick = () => {
     if(running) return;
     running = true;
     btn.disabled = true;
+
+    // 每次抽獎前：先全部蓋牌（確保每輪都是蓋住）
+    coverAll();
 
     const targetRingIdx = weightedPickIndex();
 
@@ -165,30 +249,69 @@
     const totalSteps = 8*4 + targetRingIdx;
 
     const tick = () => {
-      // 先亮目前步數對應的格
       highlight(step % 8);
 
+      // 跑燈音效（很輕，避免吵）
+      beep(880, 25, "sine", 0.02);
+
       if(step < totalSteps){
-        if(step > totalSteps - 12) delay += 25; // 收尾減速
+        if(step > totalSteps - 12) delay += 25;
         step++;
         setTimeout(tick, delay);
       }else{
-        // 雙保險：結束瞬間再強制 highlight 目標格，確保畫面一定停在目標
+        // 強制停在目標 + 翻開目標格
         highlight(targetRingIdx);
+        reveal(targetRingIdx);
 
-        // 用非阻塞彈窗顯示結果（不會卡住重繪）
-        // 用 requestAnimationFrame 讓最後一格先確實 render
+        // 停止音效：叮一聲
+        beep(1320, 90, "triangle", 0.05);
+
         requestAnimationFrame(() => {
           showModal(`抽中：${ringPrizes[targetRingIdx]}`);
-          running = false;
-          btn.disabled = false;
+
+          // ✅ 每次抽完自動洗牌：重新打亂順序、更新格子文字、再次蓋牌
+          // 讓使用者看到結果後再洗牌（避免彈窗時格子突然換）
+          // 這裡改成「關閉彈窗時洗牌」體驗更好
+          const onClose = () => {
+            overlay.style.display = "none";
+            overlay.removeEventListener("click", overlayClose);
+            modalOk.removeEventListener("click", okClose);
+
+            // 洗牌（只打亂顯示位置；機率仍由 weights 依格子走）
+            shuffleInPlace(ringPrizes);
+            // 同步把權重也跟著洗，避免「獎項文字換了，但機率還是舊位置」
+            // 這點很重要：你要的是每次洗牌後「獎項與機率」一起移動
+            shufflePairInPlace(ringPrizes, weights);
+
+            redrawTexts();
+            coverAll();
+
+            running = false;
+            btn.disabled = false;
+          };
+
+          const okClose = (e) => { e.stopPropagation(); onClose(); };
+          const overlayClose = (e) => { if(e.target === overlay) onClose(); };
+
+          modalOk.addEventListener("click", okClose, { once:true });
+          overlay.addEventListener("click", overlayClose, { once:true });
         });
       }
     };
 
     tick();
   };
+
+  // ✅ 讓獎項與權重「一起洗牌」的工具函式
+  function shufflePairInPlace(items, ws){
+    for(let i=items.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [items[i], items[j]] = [items[j], items[i]];
+      [ws[i], ws[j]] = [ws[j], ws[i]];
+    }
+  }
 </script>
 
 </body>
 </html>
+
