@@ -32,6 +32,10 @@
 
   <script>
     // 九宮格8格走位順序（順時針）
+    // 格子位置索引（0..8）對應：
+    // 0 1 2
+    // 3 4 5
+    // 6 7 8
     const ringOrder = [0,1,2,5,8,7,6,3];
 
     // 你要的 7 種獎項（可重複）
@@ -39,22 +43,21 @@
       { name: "特別獎",                 weight: 3  },
       { name: "現金200元",              weight: 35 },
       { name: "現金600元",              weight: 8  },
-      { name: "刮刮樂200元×1",          weight: 25 },
-      { name: "刮刮樂500元×1",          weight: 5  },
-      { name: "刮刮樂300元×1",          weight: 16 },
-      { name: "大樂透快選×4",           weight: 8  }
+      { name: "刮刮樂200元一張",         weight: 25 },
+      { name: "刮刮樂500元一張",         weight: 5  },
+      { name: "刮刮樂300元一張",         weight: 16 },
+      { name: "大樂透隨機快選4張",       weight: 8  }
     ];
 
-    // 因為九宮格是 8 格，但你只有 7 種獎，這裡做「顯示用」的 8 格文字：
-    // 我讓「特別獎」出現兩格，純視覺用，抽獎機率不靠這個決定。
+    // 九宮格是 8 格，但獎項 7 種：顯示上讓「特別獎」出現兩格（純顯示用）
     const displayPrizes = [
       "特別獎",
       "現金200元",
       "現金600元",
-      "刮刮樂200元×1",
-      "刮刮樂500元×1",
-      "刮刮樂300元×1",
-      "大樂透快選×4",
+      "刮刮樂200元一張",
+      "刮刮樂500元一張",
+      "刮刮樂300元一張",
+      "大樂透隨機快選4張",
       "特別獎"
     ];
 
@@ -80,9 +83,9 @@
     const btn = document.getElementById("btn");
     let running = false;
 
-    function highlight(step){
+    function highlightRingIndex(ringIdx){
       cells.forEach(c=>c.classList.remove("active"));
-      const pos = ringOrder[step % ringOrder.length];
+      const pos = ringOrder[ringIdx];      // 轉成格子位置(0..8)
       cells[pos].classList.add("active");
     }
 
@@ -101,27 +104,33 @@
       running = true;
       btn.disabled = true;
 
-      // 1) 由獎池抽出獎項（可重複）
+      // 1) 抽獎（可重複）
       const picked = weightedPick(prizePool);
 
-      // 2) 決定要停在哪一格（只為了動畫停在對應文字）
-      //    若有重複文字（特別獎有兩格），隨機停其中一格
+      // 2) 決定停在哪個「環」索引（0..7）
+      //    若文字重複（特別獎兩格），隨機挑其中一格停
       const candidates = [];
       displayPrizes.forEach((txt, idx) => {
         if(txt === picked.name) candidates.push(idx);
       });
-      const stopRingIndex = candidates[Math.floor(Math.random() * candidates.length)];
 
-      // 3) 動畫：轉4圈再停
-      let step = 0;
+      // 保險：若字串不小心對不上，直接退回停在 0
+      const stopRingIndex = candidates.length
+        ? candidates[Math.floor(Math.random() * candidates.length)]
+        : 0;
+
+      // 3) 動畫：修正步進方式 => 先 step++ 再亮格（避免看起來偏一格）
+      let ringStep = -1;        // 先從 -1 開始
       let delay = 80;
-      const totalSteps = 8*4 + stopRingIndex;
+      const totalMoves = 8*4 + stopRingIndex; // 移動次數（不是亮格次數）
 
       const tick = () => {
-        highlight(step);
-        step++;
-        if(step <= totalSteps){
-          if(step > totalSteps - 12) delay += 25; // 收尾減速
+        ringStep++; // 先移動
+        const ringIdx = ringStep % 8;
+        highlightRingIndex(ringIdx);
+
+        if(ringStep < totalMoves){
+          if(ringStep > totalMoves - 12) delay += 25; // 收尾減速
           setTimeout(tick, delay);
         } else {
           running = false;
@@ -129,6 +138,7 @@
           alert(`抽中：${picked.name}`);
         }
       };
+
       tick();
     };
   </script>
