@@ -5,58 +5,117 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>九宮格抽獎</title>
   <style>
-    body{font-family:system-ui;margin:24px}
-    .grid{display:grid;grid-template-columns:repeat(3,100px);gap:10px}
-    .cell{height:100px;display:flex;align-items:center;justify-content:center;border:1px solid #ccc;border-radius:12px}
-    .active{outline:3px solid #000}
-    button{height:100px;width:100px;border-radius:12px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans TC",sans-serif;margin:24px}
+    h3{margin:0 0 12px}
+    .grid{display:grid;grid-template-columns:repeat(3,110px);gap:10px}
+    .cell{
+      height:110px; padding:10px;
+      display:flex;align-items:center;justify-content:center;
+      border:1px solid #ddd;border-radius:14px;
+      text-align:center;line-height:1.2;
+      user-select:none;background:#fff;
+    }
+    .active{outline:3px solid #111}
+    button{
+      height:110px;width:110px;border-radius:14px;
+      border:1px solid #111;background:#111;color:#fff;
+      font-size:16px;cursor:pointer;
+    }
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .muted{color:#666;font-size:13px;margin-top:12px}
   </style>
 </head>
 <body>
   <h3>九宮格抽獎</h3>
   <div class="grid" id="grid"></div>
+  <div class="muted">每次點「開始」都會抽出一個獎（可重複）。不同手機各自獨立抽。</div>
 
   <script>
-    // 8個獎格 + 中間按鈕
-    const order = [0,1,2,5,8,7,6,3]; // 走位順序（順時針）
-    const prizes = ["A獎","B獎","C獎","D獎","E獎","F獎","G獎","謝謝參與"];
+    // 九宮格8格走位順序（順時針）
+    const ringOrder = [0,1,2,5,8,7,6,3];
+
+    // 你要的 7 種獎項（可重複）
+    const prizePool = [
+      { name: "特別獎",                 weight: 3  },
+      { name: "現金200元",              weight: 35 },
+      { name: "現金600元",              weight: 8  },
+      { name: "刮刮樂200元×1",          weight: 25 },
+      { name: "刮刮樂500元×1",          weight: 5  },
+      { name: "刮刮樂300元×1",          weight: 16 },
+      { name: "大樂透快選×4",           weight: 8  }
+    ];
+
+    // 因為九宮格是 8 格，但你只有 7 種獎，這裡做「顯示用」的 8 格文字：
+    // 我讓「特別獎」出現兩格，純視覺用，抽獎機率不靠這個決定。
+    const displayPrizes = [
+      "特別獎",
+      "現金200元",
+      "現金600元",
+      "刮刮樂200元×1",
+      "刮刮樂500元×1",
+      "刮刮樂300元×1",
+      "大樂透快選×4",
+      "特別獎"
+    ];
 
     const grid = document.getElementById("grid");
     const cells = [];
 
+    // 建格子（8格 + 中間按鈕）
     for(let i=0;i<9;i++){
       const div = document.createElement("div");
-      div.className = "cell";
+
       if(i===4){
         div.innerHTML = `<button id="btn">開始</button>`;
-        div.className = "";
       }else{
-        const idx = order.indexOf(i);
-        div.textContent = prizes[idx >= 0 ? idx : 7];
+        const ringIdx = ringOrder.indexOf(i); // 0~7
         div.className = "cell";
+        div.textContent = displayPrizes[ringIdx];
       }
+
       grid.appendChild(div);
       cells.push(div);
     }
 
-    let running=false;
+    const btn = document.getElementById("btn");
+    let running = false;
 
     function highlight(step){
       cells.forEach(c=>c.classList.remove("active"));
-      const pos = order[step % order.length];
+      const pos = ringOrder[step % ringOrder.length];
       cells[pos].classList.add("active");
     }
 
-    document.getElementById("btn").onclick = () => {
+    function weightedPick(pool){
+      const sum = pool.reduce((a,b)=>a+b.weight,0);
+      let r = Math.random() * sum;
+      for(const item of pool){
+        r -= item.weight;
+        if(r < 0) return item;
+      }
+      return pool[pool.length - 1];
+    }
+
+    btn.onclick = () => {
       if(running) return;
-      running=true;
+      running = true;
+      btn.disabled = true;
 
-      // Demo: 前端隨機（正式活動要改後端決定）
-      const target = Math.floor(Math.random()*8);
+      // 1) 由獎池抽出獎項（可重複）
+      const picked = weightedPick(prizePool);
 
-      let step=0;
-      let delay=80;
-      const totalSteps = 8*4 + target; // 轉4圈再停在 target
+      // 2) 決定要停在哪一格（只為了動畫停在對應文字）
+      //    若有重複文字（特別獎有兩格），隨機停其中一格
+      const candidates = [];
+      displayPrizes.forEach((txt, idx) => {
+        if(txt === picked.name) candidates.push(idx);
+      });
+      const stopRingIndex = candidates[Math.floor(Math.random() * candidates.length)];
+
+      // 3) 動畫：轉4圈再停
+      let step = 0;
+      let delay = 80;
+      const totalSteps = 8*4 + stopRingIndex;
 
       const tick = () => {
         highlight(step);
@@ -64,9 +123,10 @@
         if(step <= totalSteps){
           if(step > totalSteps - 12) delay += 25; // 收尾減速
           setTimeout(tick, delay);
-        }else{
-          running=false;
-          alert("結果：" + prizes[target]);
+        } else {
+          running = false;
+          btn.disabled = false;
+          alert(`抽中：${picked.name}`);
         }
       };
       tick();
