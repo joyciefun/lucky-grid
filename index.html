@@ -31,7 +31,6 @@
     position:relative; overflow:hidden;
   }
   .active{outline:4px solid var(--accent)}
-
   button{
     height:110px;width:110px;border-radius:14px;
     border:1px solid var(--accent);
@@ -80,7 +79,9 @@
 
 <h3>九宮格抽獎</h3>
 <div class="grid" id="grid"></div>
-<div class="muted">每次點「開始」抽出一個獎（可重複）。抽完後會自動洗牌，但會先完整蓋牌，不會露出下一輪內容。</div>
+<div class="muted">
+  抽之前會先看到獎項內容；按「開始」後才會蓋牌並跑燈，停到才翻開。抽完會自動洗牌但不會露出下一輪內容。
+</div>
 
 <div class="overlay" id="overlay">
   <div class="modal">
@@ -93,31 +94,40 @@
 </div>
 
 <script>
-  // === 參數：你要調延緩感就在這裡 ===
-  const REVEAL_HOLD_MS = 250;  // 翻開後保留多久（毫秒）
-  const COVER_ANIM_MS  = 260;  // 蓋牌動畫時間（要跟 CSS transition 一致）
+  // 延遲參數
+  const REVEAL_HOLD_MS = 250;
+  const COVER_ANIM_MS  = 260;
 
   // 順時針 8 格（DOM 位置索引 0..8，不含中間 4）
   const ringPositions = [0,1,2,5,8,7,6,3];
 
-  // 8 格顯示內容（避免相鄰兩格都特別獎的版本）
+  // 8 格獎項（兩個特別獎分開命名）
   let ringPrizes = [
-    "特別獎",
+    "特別獎現金",
     "現金200元",
     "現金600元",
     "刮刮樂200元一張",
     "刮刮樂300元一張",
-    "特別獎",
+    "特別獎刮刮樂",
     "大樂透隨機快選4張",
     "刮刮樂500元一張"
   ];
 
-  // 權重（對應 ringPrizes 8 格）
-  let weights = [3,35,8,25,16,3,8,5];
+  // 新權重：降低現金200出現比例（更平均）
+  let weights = [
+    2,  // 特別獎現金
+    18, // 現金200
+    10, // 現金600
+    18, // 刮刮樂200
+    16, // 刮刮樂300
+    2,  // 特別獎刮刮樂
+    10, // 大樂透×4
+    6   // 刮刮樂500
+  ];
 
   const grid = document.getElementById("grid");
   const cells = [];
-  const ringCells = []; // ringIdx -> cell div
+  const ringCells = [];
 
   for(let i=0;i<9;i++){
     const div = document.createElement("div");
@@ -165,8 +175,7 @@
       if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const o = audioCtx.createOscillator();
       const g = audioCtx.createGain();
-      o.type = type;
-      o.frequency.value = freq;
+      o.type = type; o.frequency.value = freq;
       g.gain.value = gain;
       o.connect(g); g.connect(audioCtx.destination);
       o.start();
@@ -203,7 +212,7 @@
 
   function weightedPickIndex(){
     const sum = weights.reduce((a,b)=>a+b,0);
-    let r = Math.random()*sum;
+    let r = Math.random() * sum;
     for(let i=0;i<weights.length;i++){
       r -= weights[i];
       if(r < 0) return i;
@@ -211,8 +220,9 @@
     return weights.length-1;
   }
 
-  // 初始全蓋牌
-  coverAll();
+  // ✅ 抽前可看獎項：初始不要蓋牌（揭露狀態）
+  // revealed = mask 上滑；所以一開始全設 revealed
+  for(let i=0;i<8;i++) ringCells[i].classList.add("revealed");
 
   let running = false;
 
@@ -221,7 +231,7 @@
     running = true;
     btn.disabled = true;
 
-    // 每輪開始先蓋牌（確保一致）
+    // ✅ 按開始才蓋牌（先讓大家知道有哪些獎）
     coverAll();
 
     const targetRingIdx = weightedPickIndex();
@@ -239,28 +249,28 @@
         step++;
         setTimeout(tick, delay);
       }else{
-        // 停住 + 翻開目標格
         highlight(targetRingIdx);
         reveal(targetRingIdx);
         beep(1320, 90, "triangle", 0.05);
 
-        // 翻開後稍停（讓人看清楚），再彈結果
         setTimeout(() => {
           showModal(`抽中：${ringPrizes[targetRingIdx]}`);
 
-          // 關閉彈窗後才進入「蓋牌→洗牌→改字」流程，避免露出下一輪
           const finalize = () => {
             hideModal();
             overlay.removeEventListener("click", overlayClose);
             modalOk.removeEventListener("click", okClose);
 
-            // ✅ 先蓋牌（關掉翻開），等動畫完成後才洗牌改字
+            // 先蓋牌，再洗牌改字（避免露出下一輪）
             coverAll();
 
             setTimeout(() => {
               shufflePairInPlace(ringPrizes, weights);
               redrawTexts();
-              // 保持蓋牌狀態，下一次按開始才翻
+
+              // ✅ 下一輪開始前，再把獎項全部揭露（讓大家看清楚有哪些獎）
+              for(let i=0;i<8;i++) ringCells[i].classList.add("revealed");
+
               running = false;
               btn.disabled = false;
             }, COVER_ANIM_MS);
@@ -281,5 +291,3 @@
 
 </body>
 </html>
-
-
