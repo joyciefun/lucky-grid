@@ -1,152 +1,108 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>九宮格抽獎</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans TC",sans-serif;margin:24px}
-    h3{margin:0 0 12px}
-    .grid{display:grid;grid-template-columns:repeat(3,110px);gap:10px}
-    .cell{
-      height:110px; padding:10px;
-      display:flex;align-items:center;justify-content:center;
-      border:1px solid #ddd;border-radius:14px;
-      text-align:center;line-height:1.2;
-      user-select:none;background:#fff;
-    }
-    .active{outline:3px solid #111}
-    button{
-      height:110px;width:110px;border-radius:14px;
-      border:1px solid #111;background:#111;color:#fff;
-      font-size:16px;cursor:pointer;
-    }
-    button:disabled{opacity:.6;cursor:not-allowed}
-    .muted{color:#666;font-size:13px;margin-top:12px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>九宮格抽獎</title>
+<style>
+body{font-family:sans-serif;margin:24px}
+.grid{display:grid;grid-template-columns:repeat(3,110px);gap:10px}
+.cell{
+  height:110px;display:flex;align-items:center;justify-content:center;
+  border:1px solid #ccc;border-radius:12px;text-align:center
+}
+.active{outline:3px solid #000}
+button{height:110px;width:110px;border-radius:12px;background:#000;color:#fff}
+</style>
 </head>
 <body>
-  <h3>九宮格抽獎</h3>
-  <div class="grid" id="grid"></div>
-  <div class="muted">每次點「開始」都會抽出一個獎（可重複）。不同手機各自獨立抽。</div>
 
-  <script>
-    // DOM 格子位置索引（0..8）：
-    // 0 1 2
-    // 3 4 5
-    // 6 7 8
-    //
-    // 我們用同一個「順時針順序」同時做：
-    // 1) 顯示獎項的順序
-    // 2) 動畫跑的順序
-    // 這樣不會再出現「停在A但跳出B」的偏移
-    const ringPositions = [0,1,2,5,8,7,6,3]; // 順時針一圈 8 格
+<h3>九宮格抽獎</h3>
+<div class="grid" id="grid"></div>
 
-    // 顯示在九宮格 8 格（你只有 7 種，所以特別獎顯示兩格）
-    const displayRing = [
-      "特別獎",
-      "現金200元",
-      "現金600元",
-      "刮刮樂200元一張",
-      "刮刮樂500元一張",
-      "特別獎",
-      "大樂透隨機快選4張",
-      "刮刮樂300元一張"
-    ];
+<script>
 
-    // 抽獎獎池（可重複、無庫存限制）
-    // 權重我先給一組「看起來合理」的：200較常、500較少、特別獎偏稀有
-    const prizePool = [
-      { name: "特別獎",               weight: 3  },
-      { name: "現金200元",            weight: 35 },
-      { name: "現金600元",            weight: 8  },
-      { name: "刮刮樂200元一張",       weight: 25 },
-      { name: "刮刮樂500元一張",       weight: 5  },
-      { name: "刮刮樂300元一張",       weight: 16 },
-      { name: "大樂透隨機快選4張",     weight: 8  }
-    ];
+// 順時針 8 格位置
+const ringPositions = [0,1,2,5,8,7,6,3];
 
-    const grid = document.getElementById("grid");
-    const cells = [];
+// 每個 ringIndex 對應一個獎（這裡直接固定好）
+const ringPrizes = [
+  "特別獎",
+  "現金200元",
+  "現金600元",
+  "刮刮樂200元一張",
+  "特別獎",
+  "刮刮樂300元一張",
+  "大樂透隨機快選4張",
+  "刮刮樂500元一張"
+];
 
-    // 建立 9 格（中間是按鈕）
-    for (let i=0;i<9;i++){
-      const div = document.createElement("div");
-      if(i===4){
-        div.innerHTML = `<button id="btn">開始</button>`;
-      }else{
-        div.className = "cell";
-        // 找出這個位置在 ringPositions 裡是第幾個（0..7），並放入同索引的 displayRing
-        const ringIdx = ringPositions.indexOf(i);
-        div.textContent = displayRing[ringIdx];
-      }
-      grid.appendChild(div);
-      cells.push(div);
+// 權重（跟 ringIndex 一一對應）
+const weights = [3,35,8,25,5,16,8,3];
+
+const grid = document.getElementById("grid");
+const cells = [];
+
+for(let i=0;i<9;i++){
+  const div = document.createElement("div");
+  if(i===4){
+    div.innerHTML = `<button id="btn">開始</button>`;
+  }else{
+    div.className="cell";
+    const ringIdx = ringPositions.indexOf(i);
+    div.textContent = ringPrizes[ringIdx];
+  }
+  grid.appendChild(div);
+  cells.push(div);
+}
+
+function weightedPick(){
+  const sum = weights.reduce((a,b)=>a+b,0);
+  let r = Math.random()*sum;
+  for(let i=0;i<weights.length;i++){
+    r -= weights[i];
+    if(r<0) return i;   // 回傳 ringIndex
+  }
+  return weights.length-1;
+}
+
+function highlight(ringIdx){
+  cells.forEach(c=>c.classList.remove("active"));
+  const pos = ringPositions[ringIdx];
+  cells[pos].classList.add("active");
+}
+
+let running=false;
+const btn=document.getElementById("btn");
+
+btn.onclick=()=>{
+  if(running) return;
+  running=true;
+  btn.disabled=true;
+
+  const targetRingIdx = weightedPick(); // 直接抽 ringIndex
+
+  let step=0;
+  let delay=80;
+  const totalSteps = 8*4 + targetRingIdx;
+
+  const tick=()=>{
+    highlight(step%8);
+    if(step<totalSteps){
+      if(step>totalSteps-12) delay+=25;
+      step++;
+      setTimeout(tick,delay);
+    }else{
+      running=false;
+      btn.disabled=false;
+      alert("抽中："+ringPrizes[targetRingIdx]);
     }
+  };
 
-    const btn = document.getElementById("btn");
-    let running = false;
+  tick();
+};
 
-    function clearHighlight(){
-      cells.forEach(c=>c.classList.remove("active"));
-    }
-
-    function highlightByRingIndex(ringIdx){
-      clearHighlight();
-      const pos = ringPositions[ringIdx];      // 直接用同一個順序
-      cells[pos].classList.add("active");
-    }
-
-    function weightedPick(pool){
-      const sum = pool.reduce((a,b)=>a+b.weight,0);
-      let r = Math.random() * sum;
-      for(const item of pool){
-        r -= item.weight;
-        if(r < 0) return item;
-      }
-      return pool[pool.length - 1];
-    }
-
-    btn.onclick = () => {
-      if(running) return;
-      running = true;
-      btn.disabled = true;
-
-      // 1) 抽獎
-      const picked = weightedPick(prizePool);
-
-      // 2) 找到 displayRing 中所有等於 picked.name 的格子（特別獎會有兩格）
-      const candidates = [];
-      for(let i=0;i<displayRing.length;i++){
-        if(displayRing[i] === picked.name) candidates.push(i);
-      }
-      // 理論上一定找得到；找不到就停在 0
-      const targetRingIdx = candidates.length
-        ? candidates[Math.floor(Math.random()*candidates.length)]
-        : 0;
-
-      // 3) 動畫（關鍵：step 是「當下亮的 ringIdx」，最後一步 step==totalMoves 時亮 targetRingIdx）
-      let step = 0;
-      let delay = 80;
-      const totalMoves = 8*4 + targetRingIdx; // 轉4圈 + 目標索引
-
-      const tick = () => {
-        highlightByRingIndex(step % 8);
-
-        if(step < totalMoves){
-          if(step > totalMoves - 12) delay += 25; // 收尾減速
-          step++;
-          setTimeout(tick, delay);
-        }else{
-          // 結束：此時畫面停在 targetRingIdx，彈窗也顯示同一個 picked.name
-          running = false;
-          btn.disabled = false;
-          alert(`抽中：${picked.name}`);
-        }
-      };
-
-      tick();
-    };
-  </script>
+</script>
 </body>
 </html>
+
