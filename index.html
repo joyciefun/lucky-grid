@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>九宮格抽獎</title>
+  <style>
+    body{font-family:system-ui;margin:24px}
+    .grid{display:grid;grid-template-columns:repeat(3,100px);gap:10px}
+    .cell{height:100px;display:flex;align-items:center;justify-content:center;border:1px solid #ccc;border-radius:12px}
+    .active{outline:3px solid #000}
+    button{height:100px;width:100px;border-radius:12px}
+  </style>
+</head>
+<body>
+  <h3>九宮格抽獎</h3>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    // 8個獎格 + 中間按鈕
+    const order = [0,1,2,5,8,7,6,3]; // 走位順序（順時針）
+    const prizes = ["A獎","B獎","C獎","D獎","E獎","F獎","G獎","謝謝參與"];
+
+    const grid = document.getElementById("grid");
+    const cells = [];
+
+    for(let i=0;i<9;i++){
+      const div = document.createElement("div");
+      div.className = "cell";
+      if(i===4){
+        div.innerHTML = `<button id="btn">開始</button>`;
+        div.className = "";
+      }else{
+        const idx = order.indexOf(i);
+        div.textContent = prizes[idx >= 0 ? idx : 7];
+        div.className = "cell";
+      }
+      grid.appendChild(div);
+      cells.push(div);
+    }
+
+    let running=false;
+
+    function highlight(step){
+      cells.forEach(c=>c.classList.remove("active"));
+      const pos = order[step % order.length];
+      cells[pos].classList.add("active");
+    }
+
+    document.getElementById("btn").onclick = () => {
+      if(running) return;
+      running=true;
+
+      // Demo: 前端隨機（正式活動要改後端決定）
+      const target = Math.floor(Math.random()*8);
+
+      let step=0;
+      let delay=80;
+      const totalSteps = 8*4 + target; // 轉4圈再停在 target
+
+      const tick = () => {
+        highlight(step);
+        step++;
+        if(step <= totalSteps){
+          if(step > totalSteps - 12) delay += 25; // 收尾減速
+          setTimeout(tick, delay);
+        }else{
+          running=false;
+          alert("結果：" + prizes[target]);
+        }
+      };
+      tick();
+    };
+  </script>
+</body>
+</html>
